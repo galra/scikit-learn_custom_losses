@@ -2838,6 +2838,8 @@ def validate_data(
     reset=True,
     validate_separately=False,
     skip_check_array=False,
+    *,
+    y_params=None,
     **check_params,
 ):
     """Validate input data and set or check feature names and counts of the input.
@@ -2900,6 +2902,9 @@ def validate_data(
         `n_features_in_` are checked. Otherwise, :func:`~sklearn.utils.check_array`
         is called on `X` and `y`.
 
+    y_params : list of dicts of length (n_samples), default=None
+        Used only for specific loss functions, based on the specific loss, to supply extra parameters per sample.
+
     **check_params : kwargs
         Parameters passed to :func:`~sklearn.utils.check_array` or
         :func:`~sklearn.utils.check_X_y`. Ignored if validate_separately
@@ -2924,6 +2929,7 @@ def validate_data(
 
     no_val_X = isinstance(X, str) and X == "no_validation"
     no_val_y = y is None or isinstance(y, str) and y == "no_validation"
+    no_val_y_params = y_params is None
 
     if no_val_X and no_val_y:
         raise ValueError("Validation should be done on X, y or both.")
@@ -2961,5 +2967,12 @@ def validate_data(
 
     if not no_val_X and check_params.get("ensure_2d", True):
         _check_n_features(_estimator, X, reset=reset)
+
+    if not no_val_y and not no_val_y_params:
+        if _num_samples(y_params) != _num_samples(y):
+            raise ValueError(
+                f"y_params has {_num_samples(y_params)} samples but the input data y has "
+                f"{_num_samples(y)} samples."
+            )
 
     return out

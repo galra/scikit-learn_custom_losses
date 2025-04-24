@@ -227,7 +227,7 @@ def sag{{name_suffix}}(
         for n_iter in range(max_iter):
             for sample_itr in range(n_samples):
                 # extract a random sample
-                sample_ind = dataset.random(&x_data_ptr, &x_ind_ptr, &xnnz, &y, &sample_weight)
+                sample_ind = dataset.random(&x_data_ptr, &x_ind_ptr, &xnnz, &y, &sample_weight, NULL, NULL, NULL, NULL)
 
                 # cached index for gradient_memory
                 s_idx = sample_ind * n_classes

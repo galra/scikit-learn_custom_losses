@@ -315,7 +315,6 @@ cdef class HingeUnbiasedProxy(Classification):
                  - rho_y * weight_minus_y * hinge_minus_y)
                 / (1 - self.rho_1 - self.rho_minus_1))
 
-
     cdef double cy_gradient(self, double y, double p) noexcept nogil:
         cdef double z1 = p * y
         cdef double rho_y = self.rho_1 if y == 1 else self.rho_minus_1
@@ -334,6 +333,10 @@ cdef class HingeUnbiasedProxy(Classification):
             return -rho_y * weight_minus_y * y / denominator
         else:
             return -((1-rho_minus_y) * weight_y + rho_y * weight_minus_y) * y / denominator
+
+    # def validate_y_params(self, y_params):
+    #     if isinstance(y_params, list) and len(y_params) > 0 and isinstance(y_params[0], dict):
+    #
 
 cdef __reduce__(self):
     return HingeUnbiasedProxy, (self.rho_1, self.rho_minus_1, self.threshold)

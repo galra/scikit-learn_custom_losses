@@ -52,7 +52,7 @@ SPARSE_INTERCEPT_DECAY = 0.01
 # intercept oscillation.
 
 
-def make_dataset(X, y, sample_weight, random_state=None):
+def make_dataset(X, y, sample_weight, random_state=None, *, y_params=None):
     """Create ``Dataset`` abstraction for sparse and dense inputs.
 
     This also returns the ``intercept_decay`` which is different
@@ -75,6 +75,10 @@ def make_dataset(X, y, sample_weight, random_state=None):
         Pass an int for reproducible output across multiple function calls.
         See :term:`Glossary <random_state>`.
 
+    y_params : list of dict or None, default=None
+        List of dictionaries containing parameters for each target, with the keys 'values' and 'params',
+        both of which are either None or an array.
+
     Returns
     -------
     dataset
@@ -86,6 +90,8 @@ def make_dataset(X, y, sample_weight, random_state=None):
     rng = check_random_state(random_state)
     # seed should never be 0 in SequentialDataset64
     seed = rng.randint(1, np.iinfo(np.int32).max)
+    y_extra_data_params = [yp['params'] for yp in y_params] if y_params is not None else None
+    y_extra_data_values = [yp['values'] for yp in y_params] if y_params is not None else None
 
     if X.dtype == np.float32:
         CSRData = CSRDataset32
@@ -95,11 +101,12 @@ def make_dataset(X, y, sample_weight, random_state=None):
         ArrayData = ArrayDataset64
 
     if sp.issparse(X):
-        dataset = CSRData(X.data, X.indptr, X.indices, y, sample_weight, seed=seed)
+        dataset = CSRData(X.data, X.indptr, X.indices, y, sample_weight, y_extra_data_params, y_extra_data_values,
+                          seed=seed)
         intercept_decay = SPARSE_INTERCEPT_DECAY
     else:
         X = np.ascontiguousarray(X)
-        dataset = ArrayData(X, y, sample_weight, seed=seed)
+        dataset = ArrayData(X, y, sample_weight, y_extra_data_params, y_extra_data_values, seed=seed)
         intercept_decay = 1.0
 
     return dataset, intercept_decay

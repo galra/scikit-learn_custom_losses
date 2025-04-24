@@ -64,7 +64,8 @@ cdef class SequentialDataset{{name_suffix}}:
     """
 
     cdef void next(self, {{c_type}} **x_data_ptr, int **x_ind_ptr,
-                   int *nnz, {{c_type}} *y, {{c_type}} *sample_weight) noexcept nogil:
+                   int *nnz, {{c_type}} *y, {{c_type}} *sample_weight, {{c_type}} **extra_y_params,
+                   {{c_type}} **extra_y_vals, int *num_of_extra_y_params, int *num_of_extra_y_vals) noexcept nogil:
         """Get the next example ``x`` from the dataset.
 
         This method gets the next sample looping sequentially over all samples.
@@ -91,13 +92,31 @@ cdef class SequentialDataset{{name_suffix}}:
 
         sample_weight : {{c_type}}*
             The weight of the next example.
+            
+        extra_y_params : {{c_type}}**
+            A pointer to the {{c_type}} array which holds the extra data
+            parameters, regarding y, of the next example.
+        
+        extra_y_vals : {{c_type}}**
+            A pointer to the {{c_type}} array which holds the extra data
+            values, regarding y, of the next example.
+        
+        num_of_extra_y_params : int*
+            A pointer to an int holding the number of extra data
+            parameters, regarding y, of the next example.
+        
+        num_of_extra_y_vals : int*
+            A pointer to an int holding the number of extra data
+            values, regarding y, of the next example.
         """
         cdef int current_index = self._get_next_index()
         self._sample(x_data_ptr, x_ind_ptr, nnz, y, sample_weight,
+                     extra_y_params, extra_y_vals, num_of_extra_y_params, num_of_extra_y_vals,
                      current_index)
 
     cdef int random(self, {{c_type}} **x_data_ptr, int **x_ind_ptr,
-                    int *nnz, {{c_type}} *y, {{c_type}} *sample_weight) noexcept nogil:
+                    int *nnz, {{c_type}} *y, {{c_type}} *sample_weight, {{c_type}} **extra_y_params,
+                    {{c_type}} **extra_y_vals, int *num_of_extra_y_params, int *num_of_extra_y_vals) noexcept nogil:
         """Get a random example ``x`` from the dataset.
 
         This method gets next sample chosen randomly over a uniform
@@ -123,6 +142,22 @@ cdef class SequentialDataset{{name_suffix}}:
 
         sample_weight : {{c_type}}*
             The weight of the next example.
+            
+        extra_y_params : {{c_type}}**
+            A pointer to the {{c_type}} array which holds the extra data
+            parameters, regarding y, of the next example.
+        
+        extra_y_vals : {{c_type}}**
+            A pointer to the {{c_type}} array which holds the extra data
+            values, regarding y, of the next example.
+            
+        num_of_extra_y_params : int*
+            A pointer to an int holding the number of extra data
+            parameters, regarding y, of the next example.
+        
+        num_of_extra_y_vals : int*
+            A pointer to an int holding the number of extra data
+            values, regarding y, of the next example.
 
         Returns
         -------
@@ -131,6 +166,7 @@ cdef class SequentialDataset{{name_suffix}}:
         """
         cdef int current_index = self._get_random_index()
         self._sample(x_data_ptr, x_ind_ptr, nnz, y, sample_weight,
+                     extra_y_params, extra_y_vals, num_of_extra_y_params, num_of_extra_y_vals,
                      current_index)
         return current_index
 
@@ -161,6 +197,8 @@ cdef class SequentialDataset{{name_suffix}}:
 
     cdef void _sample(self, {{c_type}} **x_data_ptr, int **x_ind_ptr,
                       int *nnz, {{c_type}} *y, {{c_type}} *sample_weight,
+                      {{c_type}} **extra_y_params, {{c_type}} **extra_y_vals,
+                      int *num_of_extra_y_params, int *num_of_extra_y_vals,
                       int current_index) noexcept nogil:
         pass
 
@@ -178,16 +216,19 @@ cdef class SequentialDataset{{name_suffix}}:
         cdef int current_index = self._get_random_index()
         return self._sample_py(current_index)
 
-    def _sample_py(self, int current_index):
+    def _sample_py(self, int current_index, get_extra_y_params=False):
         """python function used for easy testing"""
         cdef {{c_type}}* x_data_ptr
         cdef int* x_indices_ptr
         cdef int nnz, j
         cdef {{c_type}} y, sample_weight
+        cdef {{c_type}}* extra_y_params
+        cdef {{c_type}}* extra_y_vals
+        cdef int num_of_extra_y_params, num_of_extra_y_vals
 
         # call _sample in cython
-        self._sample(&x_data_ptr, &x_indices_ptr, &nnz, &y, &sample_weight,
-                     current_index)
+        self._sample(&x_data_ptr, &x_indices_ptr, &nnz, &y, &sample_weight, &extra_y_params, &extra_y_vals,
+                     &num_of_extra_y_params, &num_of_extra_y_vals, current_index)
 
         # transform the pointed data in numpy CSR array
         cdef {{c_type}}[:] x_data = np.empty(nnz, dtype={{np_type}})
@@ -200,12 +241,30 @@ cdef class SequentialDataset{{name_suffix}}:
 
         cdef int sample_idx = self.index_data_ptr[current_index]
 
-        return (
-            (np.asarray(x_data), np.asarray(x_indices), np.asarray(x_indptr)),
-            y,
-            sample_weight,
-            sample_idx,
-        )
+        cdef {{c_type}}[:] y_extra_data_params = np.empty(nnz, dtype={{np_type}})
+        cdef {{c_type}}[:] y_extra_data_values = np.empty(nnz, dtype={{np_type}})
+        if extra_y_params is not NULL and num_of_extra_y_params > 0:
+            for j in range(num_of_extra_y_params):
+                y_extra_data_params[j] = extra_y_params[j]
+        if extra_y_vals is not NULL and num_of_extra_y_vals > 0:
+            for j in range(num_of_extra_y_vals):
+                y_extra_data_values[j] = extra_y_vals[j]
+
+        if get_extra_y_params:
+            return (
+                (np.asarray(x_data), np.asarray(x_indices), np.asarray(x_indptr)),
+                y,
+                sample_weight,
+                (np.asarray(y_extra_data_values), np.asarray(y_extra_data_params)),
+                sample_idx,
+            )
+        else:
+            return (
+                (np.asarray(x_data), np.asarray(x_indices), np.asarray(x_indptr)),
+                y,
+                sample_weight,
+                sample_idx,
+            )
 
 
 cdef class ArrayDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
@@ -220,6 +279,8 @@ cdef class ArrayDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
         const {{c_type}}[:, ::1] X,
         const {{c_type}}[::1] Y,
         const {{c_type}}[::1] sample_weights,
+        const {{c_type}}[:, ::1] y_extra_data_params=None,
+        const {{c_type}}[:, ::1] y_extra_data_values=None,
         uint32_t seed=1,
     ):
         """A ``SequentialDataset`` backed by a two-dimensional numpy array.
@@ -234,6 +295,12 @@ cdef class ArrayDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
 
         sample_weights : ndarray, dtype={{c_type}}, ndim=1, mode='c'
             The weight of each sample, of shape(n_samples,)
+
+        y_extra_data_params : ndarray, dtype={{c_type}}, ndim=2, mode='c'
+            The extra data parameters of each sample, of shape(n_samples, n_extra_y_params)
+
+        y_extra_data_values : ndarray, dtype={{c_type}}, ndim=2, mode='c'
+            The extra data values of each sample, of shape(n_samples, n_extra_y_values)
         """
         if X.shape[0] > INT_MAX or X.shape[1] > INT_MAX:
             raise ValueError("More than %d samples or features not supported;"
@@ -257,6 +324,35 @@ cdef class ArrayDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
         self.Y_data_ptr = <{{c_type}} *> &Y[0]
         self.sample_weight_data = <{{c_type}} *> &sample_weights[0]
 
+        # Additional parameters for y
+        self.y_extra_data_params = y_extra_data_params
+        self.y_extra_data_values = y_extra_data_values
+
+        if y_extra_data_params is not None:
+            self.n_y_extra_data_params = y_extra_data_params.shape[1]
+            self.y_extra_data_params_stride = y_extra_data_params.strides[0] // y_extra_data_params.itemsize
+            self.y_extra_data_params_ptr = <{{c_type}} *> &y_extra_data_params[0, 0]
+            if y_extra_data_params.shape[0] != self.n_samples:
+                raise ValueError(f"y_extra_data_params ({self.n_y_extra_data_params}) should have the same number of "
+                                 f"samples as X ({self.n_samples})")
+        else:
+            self.n_y_extra_data_params = 0
+            self.y_extra_data_params_stride = 0
+            self.y_extra_data_params_ptr = NULL
+
+        if y_extra_data_values is not None:
+            self.n_y_extra_data_values = y_extra_data_values.shape[1]
+            self.y_extra_data_values_stride = y_extra_data_values.strides[0] // y_extra_data_values.itemsize
+            self.y_extra_data_values_ptr = <{{c_type}} *> &y_extra_data_values[0, 0]
+            if y_extra_data_values.shape[0] != self.n_samples:
+                raise ValueError(f"y_extra_data_values ({self.n_y_extra_data_values}) should have the same number of "
+                                 f"samples as X ({self.n_samples})")
+        else:
+            self.n_y_extra_data_values = 0
+            self.y_extra_data_values_stride = 0
+            self.y_extra_data_values_ptr = NULL
+
+
         # Use index array for fast shuffling
         self.index = np.arange(0, self.n_samples, dtype=np.intc)
         self.index_data_ptr = <int *> &self.index[0]
@@ -265,15 +361,27 @@ cdef class ArrayDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
 
     cdef void _sample(self, {{c_type}} **x_data_ptr, int **x_ind_ptr,
                       int *nnz, {{c_type}} *y, {{c_type}} *sample_weight,
+                      {{c_type}} **extra_y_params, {{c_type}} **extra_y_vals,
+                      int *num_of_extra_y_params, int *num_of_extra_y_vals,
                       int current_index) noexcept nogil:
         cdef long long sample_idx = self.index_data_ptr[current_index]
         cdef long long offset = sample_idx * self.X_stride
+        cdef long long y_extra_data_params_offset = sample_idx * self.y_extra_data_params_stride
+        cdef long long y_extra_data_values_offset = sample_idx * self.y_extra_data_values_stride
 
         y[0] = self.Y_data_ptr[sample_idx]
         x_data_ptr[0] = self.X_data_ptr + offset
         x_ind_ptr[0] = self.feature_indices_ptr
         nnz[0] = self.n_features
         sample_weight[0] = self.sample_weight_data[sample_idx]
+
+        # Additional parameters for y
+        if extra_y_params is not NULL:
+            extra_y_params[0] = self.y_extra_data_params_ptr + y_extra_data_params_offset
+            num_of_extra_y_params[0] = self.n_y_extra_data_params
+
+        extra_y_vals[0] = self.y_extra_data_values_ptr + y_extra_data_values_offset
+        num_of_extra_y_vals[0] = self.n_y_extra_data_values
 
 
 cdef class CSRDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
@@ -286,6 +394,8 @@ cdef class CSRDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
         const int[::1] X_indices,
         const {{c_type}}[::1] Y,
         const {{c_type}}[::1] sample_weights,
+        const {{c_type}}[:, ::1] y_extra_data_params,
+        const {{c_type}}[:, ::1] y_extra_data_values,
         uint32_t seed=1,
     ):
         """Dataset backed by a scipy sparse CSR matrix.
@@ -310,6 +420,12 @@ cdef class CSRDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
 
         sample_weights : ndarray, dtype={{c_type}}, ndim=1, mode='c'
             The weight of each sample.
+
+        y_extra_data_params : ndarray, dtype={{c_type}}, ndim=2, mode='c'
+            The extra data parameters of each sample, of shape(n_samples, n_extra_y_params)
+
+        y_extra_data_values : ndarray, dtype={{c_type}}, ndim=2, mode='c'
+            The extra data values of each sample, of shape(n_samples, n_extra_y_values)
         """
         # keep a reference to the data to prevent garbage collection
         self.X_data = X_data
@@ -327,6 +443,34 @@ cdef class CSRDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
         self.Y_data_ptr = <{{c_type}} *> &Y[0]
         self.sample_weight_data = <{{c_type}} *> &sample_weights[0]
 
+        # Additional parameters for y
+        self.y_extra_data_params = y_extra_data_params
+        self.y_extra_data_values = y_extra_data_values
+
+        if y_extra_data_params is not None:
+            self.n_y_extra_data_params = y_extra_data_params.shape[1]
+            self.y_extra_data_params_stride = y_extra_data_params.strides[0] // y_extra_data_params.itemsize
+            self.y_extra_data_params_ptr = <{{c_type}} * > &y_extra_data_params[0, 0]
+            if y_extra_data_params.shape[0] != self.n_samples:
+                raise ValueError(f"y_extra_data_params ({self.n_y_extra_data_params}) should have the same number of "
+                                 f"samples as X ({self.n_samples})")
+        else:
+            self.n_y_extra_data_params = 0
+            self.y_extra_data_params_stride = 0
+            self.y_extra_data_params_ptr = NULL
+
+        if y_extra_data_values is not None:
+            self.n_y_extra_data_values = y_extra_data_values.shape[1]
+            self.y_extra_data_values_stride = y_extra_data_values.strides[0] // y_extra_data_values.itemsize
+            self.y_extra_data_values_ptr = <{{c_type}} * > &y_extra_data_values[0, 0]
+            if y_extra_data_values.shape[0] != self.n_samples:
+                raise ValueError(f"y_extra_data_values ({self.n_y_extra_data_values}) should have the same number of "
+                                 f"samples as X ({self.n_samples})")
+        else:
+            self.n_y_extra_data_values = 0
+            self.y_extra_data_values_stride = 0
+            self.y_extra_data_values_ptr = NULL
+
         # Use index array for fast shuffling
         self.index = np.arange(self.n_samples, dtype=np.intc)
         self.index_data_ptr = <int *> &self.index[0]
@@ -335,6 +479,8 @@ cdef class CSRDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
 
     cdef void _sample(self, {{c_type}} **x_data_ptr, int **x_ind_ptr,
                       int *nnz, {{c_type}} *y, {{c_type}} *sample_weight,
+                      {{c_type}} **extra_y_params, {{c_type}} **extra_y_vals,
+                      int *num_of_extra_y_params, int *num_of_extra_y_vals,
                       int current_index) noexcept nogil:
         cdef long long sample_idx = self.index_data_ptr[current_index]
         cdef long long offset = self.X_indptr_ptr[sample_idx]
@@ -343,6 +489,13 @@ cdef class CSRDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
         x_ind_ptr[0] = self.X_indices_ptr + offset
         nnz[0] = self.X_indptr_ptr[sample_idx + 1] - offset
         sample_weight[0] = self.sample_weight_data[sample_idx]
+
+        # Additional parameters for y
+        extra_y_params[0] = self.y_extra_data_params_ptr + y_extra_data_params_offset
+        num_of_extra_y_params[0] = self.n_y_extra_data_params
+
+        extra_y_vals[0] = self.y_extra_data_values_ptr + y_extra_data_values_offset
+        num_of_extra_y_vals[0] = self.n_y_extra_data_values
 
 
 {{endfor}}

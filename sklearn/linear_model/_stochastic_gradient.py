@@ -10,6 +10,7 @@ from abc import ABCMeta, abstractmethod
 from numbers import Integral, Real
 
 import numpy as np
+import copy
 
 from .._loss._loss import CyHalfBinomialLoss, CyHalfSquaredError, CyHuberLoss
 from ..base import (
@@ -42,6 +43,8 @@ from ._sgd_fast import (
     _plain_sgd64,
 )
 
+LOSSES_WITH_Y_PARAMS = ['hinge_unbiased_proxy', 'modified_huber_unbiased_proxy']
+
 LEARNING_RATE_TYPES = {
     "constant": 1,
     "optimal": 2,
@@ -62,7 +65,7 @@ MAX_INT = np.iinfo(np.int32).max
 class _ValidationScoreCallback:
     """Callback for early stopping based on validation score"""
 
-    def __init__(self, estimator, X_val, y_val, sample_weight_val, classes=None):
+    def __init__(self, estimator, X_val, y_val, sample_weight_val, classes=None, y_params=None):
         self.estimator = clone(estimator)
         self.estimator.t_ = 1  # to pass check_is_fitted
         if classes is not None:
@@ -70,11 +73,15 @@ class _ValidationScoreCallback:
         self.X_val = X_val
         self.y_val = y_val
         self.sample_weight_val = sample_weight_val
+        self.y_params = y_params
 
     def __call__(self, coef, intercept):
+        if self.y_params is not None:
+            raise NotImplementedError('y_params not supported for now.')
         est = self.estimator
         est.coef_ = coef.reshape(1, -1)
         est.intercept_ = np.atleast_1d(intercept)
+        # return est.score(self.X_val, self.y_val, self.sample_weight_val, y_params=self.y_params)
         return est.score(self.X_val, self.y_val, self.sample_weight_val)
 
 
@@ -321,10 +328,13 @@ class BaseSGD(SparseCoefMixin, BaseEstimator, metaclass=ABCMeta):
         return validation_mask
 
     def _make_validation_score_cb(
-        self, validation_mask, X, y, sample_weight, classes=None
+        self, validation_mask, X, y, sample_weight, classes=None, y_params=None
     ):
         if not self.early_stopping:
             return None
+
+        if y_params is not None:
+            raise NotImplementedError('y_params not supported for now.')
 
         return _ValidationScoreCallback(
             self,
@@ -332,23 +342,33 @@ class BaseSGD(SparseCoefMixin, BaseEstimator, metaclass=ABCMeta):
             y[validation_mask],
             sample_weight[validation_mask],
             classes=classes,
+            y_params=y_params[validation_mask] if y_params is not None else None,
         )
 
 
-def _prepare_fit_binary(est, y, i, input_dtype, label_encode=True):
+def _prepare_fit_binary(est, y, i, input_dtype, label_encode=True, y_params=None):
     """Initialization for fit_binary.
 
-    Returns y, coef, intercept, average_coef, average_intercept.
+    Returns y, coef, intercept, average_coef, average_intercept, y_params
     """
     y_i = np.ones(y.shape, dtype=input_dtype, order="C")
-    if label_encode:
-        # y in {0, 1}
-        y_i[y != est.classes_[i]] = 0.0
-    else:
-        # y in {-1, +1}
-        y_i[y != est.classes_[i]] = -1.0
+    # if label encode, then y in {0, 1}, otherwise it's in {-1, +1}
+    new_label = 0.0 if label_encode else -1.0
+    y_i[y != est.classes_[i]] = new_label
+
     average_intercept = 0
     average_coef = None
+
+    y_params_i = [0] * len(y_params) if y_params is not None else None
+    if y_params is not None:
+        for j, y_param in enumerate(y_params):
+            # set the labeling values to be either {0, 1} or {-1, +1}
+            y_params_i[j] = {'values': (np.ones(y_param['values'].shape, dtype=input_dtype, order="C")
+                                        if y_param is not None else None),
+                             # TODO GR: implement params2array for the loss functions
+                             'params': est._loss_function_.params2array(y_param['params']) if hasattr(est, "_loss_function_") and hasattr(est._loss_function_, "params2array") else None}
+            if y_params_i[j]['values'] is not None:
+                y_params_i[j]['values'][y_param['values'] != est.classes_[i]] = new_label
 
     if len(est.classes_) == 2:
         if not est.average:
@@ -360,6 +380,9 @@ def _prepare_fit_binary(est, y, i, input_dtype, label_encode=True):
             average_coef = est._average_coef.ravel()
             average_intercept = est._average_intercept[0]
     else:
+        if y_params_i is not None:
+            raise NotImplementedError('Only binary classification is supported for now for this loss, with additional'
+                                      'y parameters.')
         if not est.average:
             coef = est.coef_[i]
             intercept = est.intercept_[i]
@@ -369,7 +392,7 @@ def _prepare_fit_binary(est, y, i, input_dtype, label_encode=True):
             average_coef = est._average_coef[i]
             average_intercept = est._average_intercept[i]
 
-    return y_i, coef, intercept, average_coef, average_intercept
+    return y_i, coef, intercept, average_coef, average_intercept, y_params_i
 
 
 def fit_binary(
@@ -386,6 +409,8 @@ def fit_binary(
     sample_weight,
     validation_mask=None,
     random_state=None,
+    *,
+    y_params=None,
 ):
     """Fit a single binary classifier.
 
@@ -436,18 +461,25 @@ def fit_binary(
         If RandomState instance, random_state is the random number generator;
         If None, the random number generator is the RandomState instance used
         by `np.random`.
+
+    y_params : list of dict of length (n_samples), default=None
+        Additional parameters for the loss function. If provided, the loss function must support these parameters.
     """
     # if average is not true, average_coef, and average_intercept will be
     # unused
     label_encode = isinstance(est._loss_function_, CyHalfBinomialLoss)
-    y_i, coef, intercept, average_coef, average_intercept = _prepare_fit_binary(
-        est, y, i, input_dtype=X.dtype, label_encode=label_encode
+    y_i, coef, intercept, average_coef, average_intercept, y_params_i = _prepare_fit_binary(
+        est, y, i, input_dtype=X.dtype, label_encode=label_encode, y_params=y_params
     )
-    assert y_i.shape[0] == y.shape[0] == sample_weight.shape[0]
+
+    if y_params is not None:
+        assert y_i.shape[0] == y.shape[0] == sample_weight.shape[0] == len(y_params_i) == len(y_params)
+    else:
+        assert y_i.shape[0] == y.shape[0] == sample_weight.shape[0]
 
     random_state = check_random_state(random_state)
     dataset, intercept_decay = make_dataset(
-        X, y_i, sample_weight, random_state=random_state
+        X, y_i, sample_weight, random_state=random_state, y_params=y_params
     )
 
     penalty_type = est._get_penalty_type(est.penalty)
@@ -456,6 +488,10 @@ def fit_binary(
     if validation_mask is None:
         validation_mask = est._make_validation_split(y_i, sample_mask=sample_weight > 0)
     classes = np.array([-1, 1], dtype=y_i.dtype)
+    # GR: Might need to adapt this as well. Non-trivial.
+    # GR: By default, early stopping isn't used and then there is no validation.
+    # So there's need to adapt this only if early stopping will be used.
+    # It is being validated that early_stopping isn't used with y_params in _partial_fit, for now.
     validation_score_cb = est._make_validation_score_cb(
         validation_mask, X, y_i, sample_weight, classes=classes
     )
@@ -600,6 +636,8 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
         sample_weight,
         coef_init,
         intercept_init,
+        *,
+        y_params=None,
     ):
         first_call = not hasattr(self, "classes_")
         X, y = validate_data(
@@ -611,7 +649,11 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
             order="C",
             accept_large_sparse=False,
             reset=first_call,
+            y_params=y_params,
         )
+
+        if self.early_stopping and y_params is not None:
+            raise NotImplementedError('early stopping is not supported with additional y parameters for now.')
 
         if first_call:
             # TODO(1.7) remove 0 from average parameter constraint
@@ -656,6 +698,7 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
 
         # delegate to concrete training procedure
         if n_classes > 2:
+            # TODO GR: add support for y_params to multiclass
             self._fit_multiclass(
                 X,
                 y,
@@ -674,6 +717,7 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
                 learning_rate=learning_rate,
                 sample_weight=sample_weight,
                 max_iter=max_iter,
+                y_params=y_params,
             )
         else:
             raise ValueError(
@@ -694,6 +738,8 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
         coef_init=None,
         intercept_init=None,
         sample_weight=None,
+        *,
+        y_params=None,
     ):
         if hasattr(self, "classes_"):
             # delete the attribute otherwise _partial_fit thinks it's not the first call
@@ -711,7 +757,11 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
 
         # labels can be encoded as float, int, or string literals
         # np.unique sorts in asc order; largest class id is positive class
-        y = validate_data(self, y=y)
+        y = validate_data(self, y=y, y_params=y_params)
+        if y_params is not None and loss in LOSSES_WITH_Y_PARAMS and LOSSES_WITH_Y_PARAMS[loss] is not None:
+            # TODO GR: add a proper validation of y_params
+            # self._get_loss_function(loss).validate_data(y_params=y_params)
+            pass
         classes = np.unique(y)
 
         if self.warm_start and hasattr(self, "coef_"):
@@ -744,6 +794,7 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
             sample_weight,
             coef_init,
             intercept_init,
+            y_params=y_params,
         )
 
         if (
@@ -761,7 +812,7 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
             )
         return self
 
-    def _fit_binary(self, X, y, alpha, C, sample_weight, learning_rate, max_iter):
+    def _fit_binary(self, X, y, alpha, C, sample_weight, learning_rate, max_iter, *, y_params=None):
         """Fit a binary classifier on X and y."""
         coef, intercept, n_iter_ = fit_binary(
             self,
@@ -776,6 +827,7 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
             self._expanded_class_weight[0],
             sample_weight,
             random_state=self.random_state,
+            y_params=y_params,
         )
 
         self.t_ += n_iter_ * X.shape[0]
@@ -915,7 +967,7 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
         )
 
     @_fit_context(prefer_skip_nested_validation=True)
-    def fit(self, X, y, coef_init=None, intercept_init=None, sample_weight=None):
+    def fit(self, X, y, coef_init=None, intercept_init=None, sample_weight=None, *, y_params=None):
         """Fit linear model with Stochastic Gradient Descent.
 
         Parameters
@@ -938,6 +990,14 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
             be multiplied with class_weight (passed through the
             constructor) if class_weight is specified.
 
+        y_params : list of dict of length (n_samples), default=None
+            Additional parameters to pass to the loss function, based on the
+            specific loss function used. Each dict may contain the keys 'values' and 'params'.
+            'values' will be passed to the loss function as the target values (target labels),
+            and 'params' will used to pass additional parameters to the loss function regarding
+            the specific sample.
+            If provided, the loss function must support these parameters.
+
         Returns
         -------
         self : object
@@ -955,6 +1015,7 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
             coef_init=coef_init,
             intercept_init=intercept_init,
             sample_weight=sample_weight,
+            y_params=y_params,
         )
 
 
