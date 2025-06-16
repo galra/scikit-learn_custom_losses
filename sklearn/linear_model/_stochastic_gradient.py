@@ -43,7 +43,7 @@ from ._sgd_fast import (
     _plain_sgd64,
 )
 
-LOSSES_WITH_Y_PARAMS = ['hinge_unbiased_proxy', 'modified_huber_unbiased_proxy']
+LOSSES_WITH_Y_PARAMS = ['hinge_unbiased_proxy_y_extra_params', 'modified_huber_unbiased_proxy_y_extra_params']
 
 LEARNING_RATE_TYPES = {
     "constant": 1,
@@ -762,6 +762,14 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
             # TODO GR: add a proper validation of y_params
             # self._get_loss_function(loss).validate_data(y_params=y_params)
             pass
+        elif loss in LOSSES_WITH_Y_PARAMS and y_params is None:
+            raise ValueError(
+                "y_params is required for loss %s" % loss
+            )
+        elif loss not in LOSSES_WITH_Y_PARAMS and y_params is not None:
+            raise ValueError(
+                "y_params is not supported for loss %s" % loss
+            )
         classes = np.unique(y)
 
         if self.warm_start and hasattr(self, "coef_"):

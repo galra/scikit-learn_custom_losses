@@ -584,6 +584,11 @@ def _plain_sgd{{name_suffix}}(
     cdef double dloss = 0.0
     cdef double MAX_DLOSS = 1e12
 
+    cdef Py_ssize_t n_y_extra_data_params = 0
+    cdef {{c_}} *y_extra_data_params_ptr = NULL
+    cdef Py_ssize_t n_y_extra_data_values = 0
+    cdef {{c_}} *y_extra_data_values_ptr = NULL
+
     cdef long long sample_index
 
     # q vector is only used for L1 regularization
@@ -619,7 +624,8 @@ def _plain_sgd{{name_suffix}}(
                 dataset.shuffle(seed)
             for i in range(n_samples):
                 dataset.next(&x_data_ptr, &x_ind_ptr, &xnnz,
-                             &y, &sample_weight)
+                             &y, &sample_weight, &y_extra_data_params_ptr, &y_extra_data_values_ptr,
+                             &n_y_extra_data_params, &n_y_extra_data_values)
 
                 sample_index = dataset.index_data_ptr[dataset.current_index]
                 if validation_mask[sample_index]:
@@ -633,7 +639,12 @@ def _plain_sgd{{name_suffix}}(
                     eta = eta0 / pow(t, power_t)
 
                 if verbose or not early_stopping:
-                    sumloss += loss.cy_loss(y, p)
+                    if y_extra_data_params_ptr is not NULL or y_extra_data_values_ptr is not NULL:
+                        sumloss += loss.cy_loss(y, p, y_extra_data_params_ptr,
+                                         n_y_extra_data_params, y_extra_data_values_ptr,
+                                         n_y_extra_data_values)
+                    else:
+                        sumloss += loss.cy_loss(y, p)
 
                 if y > 0.0:
                     class_weight = weight_pos
@@ -644,12 +655,25 @@ def _plain_sgd{{name_suffix}}(
                     update = sqnorm(x_data_ptr, x_ind_ptr, xnnz)
                     if update == 0:
                         continue
-                    update = min(C, loss.cy_loss(y, p) / update)
+                    if y_extra_data_params_ptr is not NULL or y_extra_data_values_ptr is not NULL:
+                        update = min(C, loss.cy_loss(y, p, y_extra_data_params_ptr, n_y_extra_data_params,
+                                                     y_extra_data_values_ptr, n_y_extra_data_values) / update)
+                    else:
+                        update = min(C, loss.cy_loss(y, p) / update)
                 elif learning_rate == PA2:
                     update = sqnorm(x_data_ptr, x_ind_ptr, xnnz)
-                    update = loss.cy_loss(y, p) / (update + 0.5 / C)
+                    if y_extra_data_params_ptr is not NULL or y_extra_data_values_ptr is not NULL:
+                        update = loss.cy_loss(y, p, y_extra_data_params_ptr, n_y_extra_data_params,
+                                              y_extra_data_values_ptr, n_y_extra_data_values) / (update + 0.5 / C)
+                    else:
+                        update = loss.cy_loss(y, p) / (update + 0.5 / C)
                 else:
-                    dloss = loss.cy_gradient(y, p)
+                    if y_extra_data_params_ptr is not NULL or y_extra_data_values_ptr is not NULL:
+                        dloss = loss.cy_gradient(y, p, y_extra_data_params_ptr,
+                                         n_y_extra_data_params, y_extra_data_values_ptr,
+                                         n_y_extra_data_values)
+                    else:
+                        dloss = loss.cy_gradient(y, p)
                     # clip dloss with large values to avoid numerical
                     # instabilities
                     if dloss < -MAX_DLOSS:
