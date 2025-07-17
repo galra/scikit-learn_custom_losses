@@ -584,10 +584,10 @@ def _plain_sgd{{name_suffix}}(
     cdef double dloss = 0.0
     cdef double MAX_DLOSS = 1e12
 
-    cdef Py_ssize_t n_y_extra_data_params = 0
-    cdef {{c_}} *y_extra_data_params_ptr = NULL
-    cdef Py_ssize_t n_y_extra_data_values = 0
-    cdef {{c_}} *y_extra_data_values_ptr = NULL
+    cdef int n_y_extra_data_params = 0
+    cdef {{c_type}} *y_extra_data_params_ptr = NULL
+    cdef int n_y_extra_data_values = 0
+    cdef {{c_type}} *y_extra_data_values_ptr = NULL
 
     cdef long long sample_index
 
@@ -632,6 +632,10 @@ def _plain_sgd{{name_suffix}}(
                     # do not learn on the validation set
                     continue
 
+                if y_extra_data_params_ptr is not NULL:
+                    # Convert the data into doubles
+                    y_extra_data_params_ptr = <{{c_type}} *>y_extra_data_params_ptr
+
                 p = w.dot(x_data_ptr, x_ind_ptr, xnnz) + intercept
                 if learning_rate == OPTIMAL:
                     eta = 1.0 / (alpha * (optimal_init + t - 1))
@@ -640,9 +644,10 @@ def _plain_sgd{{name_suffix}}(
 
                 if verbose or not early_stopping:
                     if y_extra_data_params_ptr is not NULL or y_extra_data_values_ptr is not NULL:
-                        sumloss += loss.cy_loss(y, p, y_extra_data_params_ptr,
-                                         n_y_extra_data_params, y_extra_data_values_ptr,
-                                         n_y_extra_data_values)
+                        sumloss += loss.cy_loss_with_extra_params(y, p, <double *>y_extra_data_params_ptr,
+                                                                  n_y_extra_data_params,
+                                                                  <double *>y_extra_data_values_ptr,
+                                                                  n_y_extra_data_values, sizeof({{c_type}}))
                     else:
                         sumloss += loss.cy_loss(y, p)
 
@@ -656,22 +661,29 @@ def _plain_sgd{{name_suffix}}(
                     if update == 0:
                         continue
                     if y_extra_data_params_ptr is not NULL or y_extra_data_values_ptr is not NULL:
-                        update = min(C, loss.cy_loss(y, p, y_extra_data_params_ptr, n_y_extra_data_params,
-                                                     y_extra_data_values_ptr, n_y_extra_data_values) / update)
+                        update = min(C, loss.cy_loss_with_extra_params(y, p, <double *>y_extra_data_params_ptr,
+                                                                       n_y_extra_data_params,
+                                                                       <double *>y_extra_data_values_ptr,
+                                                                       n_y_extra_data_values,
+                                                                       sizeof({{c_type}})) / update)
                     else:
                         update = min(C, loss.cy_loss(y, p) / update)
                 elif learning_rate == PA2:
                     update = sqnorm(x_data_ptr, x_ind_ptr, xnnz)
                     if y_extra_data_params_ptr is not NULL or y_extra_data_values_ptr is not NULL:
-                        update = loss.cy_loss(y, p, y_extra_data_params_ptr, n_y_extra_data_params,
-                                              y_extra_data_values_ptr, n_y_extra_data_values) / (update + 0.5 / C)
+                        update = loss.cy_loss_with_extra_params(y, p, <double *>y_extra_data_params_ptr,
+                                                                n_y_extra_data_params,
+                                                                <double *>y_extra_data_values_ptr,
+                                                                n_y_extra_data_values,
+                                                                sizeof({{c_type}})) / (update + 0.5 / C)
                     else:
                         update = loss.cy_loss(y, p) / (update + 0.5 / C)
                 else:
                     if y_extra_data_params_ptr is not NULL or y_extra_data_values_ptr is not NULL:
-                        dloss = loss.cy_gradient(y, p, y_extra_data_params_ptr,
-                                         n_y_extra_data_params, y_extra_data_values_ptr,
-                                         n_y_extra_data_values)
+                        dloss = loss.cy_gradient_with_extra_params(y, p, <double *>y_extra_data_params_ptr,
+                                                                   n_y_extra_data_params,
+                                                                   <double *>y_extra_data_values_ptr,
+                                                                   n_y_extra_data_values, sizeof({{c_type}}))
                     else:
                         dloss = loss.cy_gradient(y, p)
                     # clip dloss with large values to avoid numerical

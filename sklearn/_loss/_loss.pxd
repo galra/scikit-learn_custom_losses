@@ -25,6 +25,8 @@ cdef class CyLossFunction:
     cdef double cy_loss(self, double y_true, double raw_prediction) noexcept nogil
     cdef double cy_gradient(self, double y_true, double raw_prediction) noexcept nogil
     cdef double_pair cy_grad_hess(self, double y_true, double raw_prediction) noexcept nogil
+    cdef double cy_loss_with_extra_params(self, double y_true, double raw_prediction, double * y_extra_data_params_ptr, int n_y_extra_data_params, double * y_extra_data_values_ptr, int n_y_extra_data_values, size_t itemsize) noexcept nogil
+    cdef double cy_gradient_with_extra_params(self, double y_true, double raw_prediction, double * y_extra_data_params_ptr, int n_y_extra_data_params, double * y_extra_data_values_ptr, int n_y_extra_data_values, size_t itemsize) noexcept nogil
 
 
 cdef class CyHalfSquaredError(CyLossFunction):

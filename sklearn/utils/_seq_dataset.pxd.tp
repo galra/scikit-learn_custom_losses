@@ -42,15 +42,18 @@ cdef class SequentialDataset{{name_suffix}}:
     cdef void _sample(self, {{c_type}} **x_data_ptr, int **x_ind_ptr,
                       int *nnz, {{c_type}} *y, {{c_type}} *sample_weight,
                       {{c_type}} **extra_y_params, {{c_type}} **extra_y_vals,
+                      int *num_of_extra_y_params, int *num_of_extra_y_vals,
                       int current_index) noexcept nogil
     cdef void next(self, {{c_type}} **x_data_ptr, int **x_ind_ptr,
                    int *nnz, {{c_type}} *y, {{c_type}} *sample_weight,
-                   {{c_type}} **extra_y_params=None,
-                   {{c_type}} **extra_y_vals=None) noexcept nogil
+                   {{c_type}} **extra_y_params,
+                   {{c_type}} **extra_y_vals,
+                   int *num_of_extra_y_params, int *num_of_extra_y_vals) noexcept nogil
     cdef int random(self, {{c_type}} **x_data_ptr, int **x_ind_ptr,
                     int *nnz, {{c_type}} *y, {{c_type}} *sample_weight,
-                    {{c_type}} **extra_y_params=None,
-                    {{c_type}} **extra_y_vals=None) noexcept nogil
+                    {{c_type}} **extra_y_params,
+                    {{c_type}} **extra_y_vals,
+                    int *num_of_extra_y_params, int *num_of_extra_y_vals) noexcept nogil
 
 
 cdef class ArrayDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
@@ -64,8 +67,8 @@ cdef class ArrayDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
     cdef const int[::1] feature_indices
     cdef int *feature_indices_ptr
     cdef {{c_type}} *sample_weight_data
-    cdef {{c_type}} [:, ::1] y_extra_data_params
-    cdef {{c_type}} [:, ::1] y_extra_data_values
+    cdef const {{c_type}} [:, ::1] y_extra_data_params
+    cdef const {{c_type}} [:, ::1] y_extra_data_values
     cdef Py_ssize_t n_y_extra_data_params
     cdef Py_ssize_t n_y_extra_data_values
     cdef intp_t y_extra_data_params_stride
@@ -86,8 +89,8 @@ cdef class CSRDataset{{name_suffix}}(SequentialDataset{{name_suffix}}):
     cdef int *X_indices_ptr
     cdef {{c_type}} *Y_data_ptr
     cdef {{c_type}} *sample_weight_data
-    cdef {{c_type}} [:, ::1] y_extra_data_params
-    cdef {{c_type}} [:, ::1] y_extra_data_values
+    cdef const {{c_type}} [:, ::1] y_extra_data_params
+    cdef const {{c_type}} [:, ::1] y_extra_data_values
     cdef Py_ssize_t n_y_extra_data_params
     cdef Py_ssize_t n_y_extra_data_values
     cdef intp_t y_extra_data_params_stride

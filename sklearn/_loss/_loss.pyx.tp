@@ -838,6 +838,40 @@ cdef class CyLossFunction:
         """
         pass
 
+    cdef double cy_loss_with_extra_params(self, double y_true, double raw_prediction,
+                                          double * y_extra_data_params_ptr, int n_y_extra_data_params,
+                                          double * y_extra_data_values_ptr, int n_y_extra_data_values,
+                                          size_t itemsize) noexcept nogil:
+        """Compute the loss for a single sample.
+
+        Parameters
+        ----------
+        y_true : double
+            Observed, true target value.
+        raw_prediction : double
+            Raw prediction value (in link space).
+        y_extra_data_params_ptr : pointer to double or float
+            Additional parameters for the loss function for this specific sample.
+            These are optional and can be used.
+        n_y_extra_data_params : int
+            Number of additional parameters for the loss function.
+        y_extra_data_values_ptr : pointer to double or float
+            Additional values for the loss function for this specific sample.
+            These are optional and can be used.
+        n_y_extra_data_values : int
+            Number of additional values for the loss function.
+        itemsize : size_t
+            Size of the data type used for `y_extra_data_params_ptr` and
+            `y_extra_data_values_ptr`. This is usually sizeof(double) or sizeof(float).
+        
+        
+        Returns
+        -------
+        double
+            The loss evaluated at `y_true` and `raw_prediction`.
+        """
+        pass
+
     cdef double cy_gradient(self, double y_true, double raw_prediction) noexcept nogil:
         """Compute gradient of loss w.r.t. raw_prediction for a single sample.
 
@@ -854,6 +888,55 @@ cdef class CyLossFunction:
             The derivative of the loss function w.r.t. `raw_prediction`.
         """
         pass
+
+    cdef double cy_gradient_with_extra_params(
+        self, double y_true, double raw_prediction,
+        double * y_extra_data_params_ptr, int n_y_extra_data_params,
+        double * y_extra_data_values_ptr, int n_y_extra_data_values,
+        size_t itemsize) noexcept nogil:
+        """Compute gradient of loss w.r.t. raw_prediction for a single sample.
+
+        Parameters
+        ----------
+        y_true : double
+            Observed, true target value.
+        raw_prediction : double
+            Raw prediction value (in link space).
+        y_extra_data_params_ptr : pointer to double or float
+            Additional parameters for the loss function for this specific sample.
+            These are optional and can be used.
+        n_y_extra_data_params : int
+            Number of additional parameters for the loss function.
+        y_extra_data_values_ptr : pointer to double or float
+            Additional values for the loss function for this specific sample.
+            These are optional and can be used.
+        n_y_extra_data_values : int
+            Number of additional values for the loss function.
+        itemsize : size_t
+            Size of the data type used for `y_extra_data_params_ptr` and
+            `y_extra_data_values_ptr`. This is usually sizeof(double) or sizeof(float).
+
+        Returns
+        -------
+        double
+            The derivative of the loss function w.r.t. `raw_prediction`.
+        """
+        pass
+
+    def _params2array(self, params):
+        """Convert parameters to a numpy array. Used for loss functions with extra y parameters.
+
+        Parameters
+        ----------
+        params : array of shape (n_params,) or a dictionary
+            Parameters to convert.
+
+        Returns
+        -------
+        np.ndarray
+            A numpy array containing the parameters.
+        """
+        return np.asarray(params, dtype=np.float64)
 
     cdef double_pair cy_grad_hess(
         self, double y_true, double raw_prediction
