@@ -364,9 +364,9 @@ def _prepare_fit_binary(est, y, i, input_dtype, label_encode=True, y_params=None
             # set the labeling values to be either {0, 1} or {-1, +1}
             y_params_parsed[j] = {'values': (np.ones(y_param['values'].shape, dtype=input_dtype, order="C")
                                              if y_param is not None else None),
-                                  'params': est._loss_function_.params2array(
+                                  'params': est._loss_function_._params2array(
                                       y_param['params']) if hasattr(est, "_loss_function_") and hasattr(
-                                      est._loss_function_, "params2array") else None}
+                                      est._loss_function_, "_params2array") else None}
             if y_params_parsed[j]['values'] is not None:
                 y_params_parsed[j]['values'][y_param['values'] != est.classes_[i]] = new_label
 
