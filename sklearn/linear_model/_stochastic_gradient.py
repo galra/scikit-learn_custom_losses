@@ -42,7 +42,7 @@ from ._sgd_fast import (
     _plain_sgd64,
 )
 
-LOSSES_WITH_Y_PARAMS = ['hinge_unbiased_proxy_y_extra_params', 'modified_huber_unbiased_proxy_y_extra_params']
+LOSSES_WITH_Y_PARAMS = ['hinge_unbiased_proxy_varying_rhos', 'modified_huber_unbiased_proxy_varying_rhos']
 
 LEARNING_RATE_TYPES = {
     "constant": 1,
@@ -561,6 +561,8 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
         "squared_epsilon_insensitive": (SquaredEpsilonInsensitive, DEFAULT_EPSILON),
         "hinge_unbiased_proxy": (HingeUnbiasedProxy, 1.0),
         "modified_huber_unbiased_proxy": (ModifiedHuberUnbiasedProxy,),
+        "hinge_unbiased_proxy_varying_rhos": (HingeUnbiasedProxyVaryingRhos, 1.0),
+        "modified_huber_unbiased_proxy_varying_rhos": (ModifiedHuberUnbiasedProxyVaryingRhos,),
     }
 
     _parameter_constraints: dict = {
@@ -759,7 +761,7 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
         # np.unique sorts in asc order; largest class id is positive class
         y = validate_data(self, y=y, y_params=y_params)
         loss_name = loss if isinstance(loss, str) else loss[0]
-        if y_params is not None and loss_name in LOSSES_WITH_Y_PARAMS and LOSSES_WITH_Y_PARAMS[loss_name] is not None:
+        if y_params is not None and loss_name in LOSSES_WITH_Y_PARAMS:
             # TODO GR: add a proper validation of y_params
             # self._get_loss_function(loss).validate_data(y_params=y_params)
             pass
