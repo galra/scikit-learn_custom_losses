@@ -758,17 +758,18 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
         # labels can be encoded as float, int, or string literals
         # np.unique sorts in asc order; largest class id is positive class
         y = validate_data(self, y=y, y_params=y_params)
-        if y_params is not None and loss in LOSSES_WITH_Y_PARAMS and LOSSES_WITH_Y_PARAMS[loss] is not None:
+        loss_name = loss if isinstance(loss, str) else loss[0]
+        if y_params is not None and loss_name in LOSSES_WITH_Y_PARAMS and LOSSES_WITH_Y_PARAMS[loss_name] is not None:
             # TODO GR: add a proper validation of y_params
             # self._get_loss_function(loss).validate_data(y_params=y_params)
             pass
-        elif loss in LOSSES_WITH_Y_PARAMS and y_params is None:
+        elif loss_name in LOSSES_WITH_Y_PARAMS and y_params is None:
             raise ValueError(
                 "y_params is required for loss %s" % loss
             )
-        elif loss not in LOSSES_WITH_Y_PARAMS and y_params is not None:
+        elif loss_name not in LOSSES_WITH_Y_PARAMS and y_params is not None:
             raise ValueError(
-                "y_params is not supported for loss %s" % loss
+                "y_params is not supported for loss %s" % loss_name
             )
         classes = np.unique(y)
 
