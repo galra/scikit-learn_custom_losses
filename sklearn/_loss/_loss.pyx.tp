@@ -936,6 +936,8 @@ cdef class CyLossFunction:
         np.ndarray
             A numpy array containing the parameters.
         """
+        if params is None:
+            return None
         return np.asarray(params, dtype=np.float64)
 
     cdef double_pair cy_grad_hess(

@@ -48,6 +48,8 @@ from ..utils.validation import _check_sample_weight, check_is_fitted, validate_d
 # should be squashed into its respective objects.
 
 SPARSE_INTERCEPT_DECAY = 0.01
+
+
 # For sparse data intercept updates are scaled by this decay factor to avoid
 # intercept oscillation.
 
@@ -92,6 +94,19 @@ def make_dataset(X, y, sample_weight, random_state=None, *, y_params=None):
     seed = rng.randint(1, np.iinfo(np.int32).max)
     y_extra_data_params = [yp['params'] for yp in y_params] if y_params is not None else None
     y_extra_data_values = [yp['values'] for yp in y_params] if y_params is not None else None
+    y_extra_data_params_formatted = None
+    y_extra_data_values_formatted = None
+    is_y_extra_data_params_none = [p is None for p in y_extra_data_params]
+    is_y_extra_data_values_none = [v is None for v in y_extra_data_values]
+
+    if any(is_y_extra_data_params_none) and not all(is_y_extra_data_params_none):
+        raise ValueError("y_params 'params' should be all None or all arrays.")
+    elif not any(is_y_extra_data_params_none):
+        y_extra_data_params_formatted = np.array(y_extra_data_params)
+    if any(is_y_extra_data_values_none) and not all(is_y_extra_data_values_none):
+        raise ValueError("y_params 'values' should be all None or all arrays.")
+    elif not any(is_y_extra_data_values_none):
+        y_extra_data_values_formatted = np.array(y_extra_data_values)
 
     if X.dtype == np.float32:
         CSRData = CSRDataset32
@@ -101,26 +116,27 @@ def make_dataset(X, y, sample_weight, random_state=None, *, y_params=None):
         ArrayData = ArrayDataset64
 
     if sp.issparse(X):
-        dataset = CSRData(X.data, X.indptr, X.indices, y, sample_weight, y_extra_data_params, y_extra_data_values,
-                          seed=seed)
+        dataset = CSRData(X.data, X.indptr, X.indices, y, sample_weight, y_extra_data_params_formatted,
+                          y_extra_data_values_formatted, seed=seed)
         intercept_decay = SPARSE_INTERCEPT_DECAY
     else:
         X = np.ascontiguousarray(X)
-        dataset = ArrayData(X, y, sample_weight, y_extra_data_params, y_extra_data_values, seed=seed)
+        dataset = ArrayData(X, y, sample_weight, y_extra_data_params_formatted, y_extra_data_values_formatted,
+                            seed=seed)
         intercept_decay = 1.0
 
     return dataset, intercept_decay
 
 
 def _preprocess_data(
-    X,
-    y,
-    *,
-    fit_intercept,
-    copy=True,
-    copy_y=True,
-    sample_weight=None,
-    check_input=True,
+        X,
+        y,
+        *,
+        fit_intercept,
+        copy=True,
+        copy_y=True,
+        sample_weight=None,
+        check_input=True,
 ):
     """Common data preprocessing for fitting linear models.
 
@@ -576,13 +592,13 @@ class LinearRegression(MultiOutputMixin, RegressorMixin, LinearModel):
     }
 
     def __init__(
-        self,
-        *,
-        fit_intercept=True,
-        copy_X=True,
-        tol=1e-6,
-        n_jobs=None,
-        positive=False,
+            self,
+            *,
+            fit_intercept=True,
+            copy_X=True,
+            tol=1e-6,
+            n_jobs=None,
+            positive=False,
     ):
         self.fit_intercept = fit_intercept
         self.copy_X = copy_X
@@ -716,7 +732,7 @@ class LinearRegression(MultiOutputMixin, RegressorMixin, LinearModel):
 
 
 def _check_precomputed_gram_matrix(
-    X, precompute, X_offset, X_scale, rtol=None, atol=1e-5
+        X, precompute, X_offset, X_scale, rtol=None, atol=1e-5
 ):
     """Computes a single element of the gram matrix and compares it to
     the corresponding element of the user supplied gram matrix.
@@ -780,14 +796,14 @@ def _check_precomputed_gram_matrix(
 
 
 def _pre_fit(
-    X,
-    y,
-    Xy,
-    precompute,
-    fit_intercept,
-    copy,
-    check_input=True,
-    sample_weight=None,
+        X,
+        y,
+        Xy,
+        precompute,
+        fit_intercept,
+        copy,
+        check_input=True,
+        sample_weight=None,
 ):
     """Function used at beginning of fit in linear models with L1 or L0 penalty.
 

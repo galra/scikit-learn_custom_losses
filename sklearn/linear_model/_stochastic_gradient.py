@@ -38,6 +38,8 @@ from ._sgd_fast import (
     SquaredHinge,
     ModifiedHuberUnbiasedProxy,
     HingeUnbiasedProxy,
+    HingeUnbiasedProxyVaryingRhos,
+    ModifiedHuberUnbiasedProxyVaryingRhos,
     _plain_sgd32,
     _plain_sgd64,
 )
@@ -363,7 +365,7 @@ def _prepare_fit_binary(est, y, i, input_dtype, label_encode=True, y_params=None
         for j, y_param in enumerate(y_params):
             # set the labeling values to be either {0, 1} or {-1, +1}
             y_params_parsed[j] = {'values': (np.ones(y_param['values'].shape, dtype=input_dtype, order="C")
-                                             if y_param is not None else None),
+                                             if y_param is not None and y_param['values'] is not None else None),
                                   'params': est._loss_function_._params2array(
                                       y_param['params']) if hasattr(est, "_loss_function_") and hasattr(
                                       est._loss_function_, "_params2array") else None}
