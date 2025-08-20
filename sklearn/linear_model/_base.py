@@ -96,16 +96,16 @@ def make_dataset(X, y, sample_weight, random_state=None, *, y_params=None):
     y_extra_data_values = [yp['values'] for yp in y_params] if y_params is not None else None
     y_extra_data_params_formatted = None
     y_extra_data_values_formatted = None
-    is_y_extra_data_params_none = [p is None for p in y_extra_data_params]
-    is_y_extra_data_values_none = [v is None for v in y_extra_data_values]
+    is_y_extra_data_params_none = [p is None for p in y_extra_data_params] if y_params is not None else None
+    is_y_extra_data_values_none = [v is None for v in y_extra_data_values] if y_params is not None else None
 
-    if any(is_y_extra_data_params_none) and not all(is_y_extra_data_params_none):
+    if y_params is not None and (any(is_y_extra_data_params_none) and not all(is_y_extra_data_params_none)):
         raise ValueError("y_params 'params' should be all None or all arrays.")
-    elif not any(is_y_extra_data_params_none):
+    elif y_params is not None and not any(is_y_extra_data_params_none):
         y_extra_data_params_formatted = np.array(y_extra_data_params)
-    if any(is_y_extra_data_values_none) and not all(is_y_extra_data_values_none):
+    if y_params is not None and any(is_y_extra_data_values_none) and not all(is_y_extra_data_values_none):
         raise ValueError("y_params 'values' should be all None or all arrays.")
-    elif not any(is_y_extra_data_values_none):
+    elif y_params is not None and not any(is_y_extra_data_values_none):
         y_extra_data_values_formatted = np.array(y_extra_data_values)
 
     if X.dtype == np.float32:

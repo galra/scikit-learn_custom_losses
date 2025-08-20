@@ -27,6 +27,8 @@ from time import time
 
 from cython cimport floating
 from libc.math cimport exp, fabs, isfinite, log, pow, INFINITY
+# from libc.stdio cimport fprintf, stdout
+
 
 from .._loss._loss cimport CyLossFunction
 from ..utils._typedefs cimport uint32_t, uint8_t
@@ -149,6 +151,7 @@ cdef class ClassificiationUnbiasedProxyVaryingRhos(Classification):
         cdef double rho_minus_y_minus_y = 0
         cdef double weight_y = self.weight_1 if y == 1 else self.weight_minus_1
         cdef double weight_minus_y = self.weight_minus_1 if y == 1 else self.weight_1
+        cdef int index = 0
 
         # Fetch the rhos according to the itemsize.
         # If itemsize is not sizeof(float) or sizeof(double), or if there's a wrong number of params, return INFINITY
@@ -169,7 +172,7 @@ cdef class ClassificiationUnbiasedProxyVaryingRhos(Classification):
             return INFINITY
 
         return ((rho_minus_y_minus_y * weight_y * val_with_y
-                 - rho_y_minus_y * weight_minus_y * val_with_minus_y)
+                 - rho_minus_y_y * weight_minus_y * val_with_minus_y)
                 / (rho_y_y * rho_minus_y_minus_y - rho_y_minus_y * rho_minus_y_y))
 
     cdef double cy_loss_with_extra_params(self, double y, double p, double * y_extra_data_params_ptr,
@@ -195,7 +198,7 @@ cdef class ClassificiationUnbiasedProxyVaryingRhos(Classification):
             raise ValueError("Missing required parameters: 'rho_y_y', 'rho_y_minus_y', 'rho_minus_y_y', "
                              "'rho_minus_y_minus_y'. Existing keys: {}".format(params.keys()))
         return np.array([params['rho_y_y'], params['rho_y_minus_y'], params['rho_minus_y_y'],
-                         params['rho_minus_y_minus_y']],)
+                         params['rho_minus_y_minus_y']])
 
     cdef double _loss(self, double y, double p) noexcept nogil:
         # stub method to be implemented in subclasses
@@ -204,6 +207,16 @@ cdef class ClassificiationUnbiasedProxyVaryingRhos(Classification):
     cdef double _gradient(self, double y, double p) noexcept nogil:
         # stub method to be implemented in subclasses
         return 0
+
+    def py_loss(self, double p, double y, const double[::1] y_params):
+        """Python version of `loss` for testing only."""
+        y_params_ptr = <double *> &y_params[0]
+        return self.cy_loss_with_extra_params(y, p, y_params_ptr, len(y_params), NULL, 0, y_params.itemsize)
+
+    def py_dloss(self, double p, double y, const double[::1] y_params):
+        """Python version of `dloss` for testing only."""
+        y_params_ptr = <double *> &y_params[0]
+        return self.cy_gradient_with_extra_params(y, p, y_params_ptr, len(y_params), NULL, 0, y_params.itemsize)
 
 cdef class ModifiedHuber(Classification):
     """Modified Huber loss for binary classification with y in {-1, 1}
