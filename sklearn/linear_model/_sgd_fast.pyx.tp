@@ -27,7 +27,7 @@ from time import time
 
 from cython cimport floating
 from libc.math cimport exp, fabs, isfinite, log, pow, INFINITY
-# from libc.stdio cimport fprintf, stdout
+from libc.stdio cimport fprintf, stdout
 
 
 from .._loss._loss cimport CyLossFunction
@@ -79,6 +79,33 @@ cdef class Regression(CyLossFunction):
 
         Parameters
         ----------
+        p : double
+            The prediction, `p = w^T x + intercept`.
+        y : double
+            The true value (aka target).
+
+        Returns
+        -------
+        double
+            The loss evaluated at `p` and `y`.
+        """
+        return self.cy_loss(y, p)
+
+    def py_dloss(self, double p, double y):
+        """Python version of `dloss` for testing only.
+
+        Pytest needs a python function and can't use cdef functions.
+
+        Parameters
+        ----------
+        p : double
+            The prediction, `p = w^T x`.
+        y : double
+            The true value (aka target).
+
+        Returns
+        -------
+        double
         p : double
             The prediction, `p = w^T x + intercept`.
         y : double
@@ -218,6 +245,140 @@ cdef class ClassificiationUnbiasedProxyVaryingRhos(Classification):
         y_params_ptr = <double *> &y_params[0]
         return self.cy_gradient_with_extra_params(y, p, y_params_ptr, len(y_params), NULL, 0, y_params.itemsize)
 
+
+cdef class ClassificationMultiplicativeTriplet(Classification):
+    """Base class for classification loss functions that are of a multiplicative form across triplets.
+    l^~(y_{i-1}, y_i, y_{i+1}, p_i) = l(y_{i-1}, p_i) * l(y_i, p_i) * l(y_{i+1}, p_i)  [+ alpha * regularization]
+    The default regularization, if added, is alpha * [y_{i-1}*l(y_{i-1}, p_i) + y_i*l(y_i, p_i) + y_{i+1}*l(y_{i+1}, p_i)]
+
+    This class is used for losses that can be expressed as a product of a base loss over 3 values.
+    Possibly with a regularization term.
+    It provides a structure for implementing such losses while ensuring the correct behavior of the loss and gradient
+    calculations.
+    """
+    cdef int add_regularization
+    cdef double regularization_factor
+    cdef int class_zero_or_minus_one
+
+    def __init__(self, int add_regularization=1, double regularization_factor=1.0, int class_zero_or_minus_one=-1):
+        """
+        Initialize the loss function with a multiplicative factor.
+
+        :param add_regularization: A boolean indicating whether to add regularization to the loss function.
+        :param regularization_factor: The factor by which to multiply the regularization term.
+        :param class_zero_or_minus_one: The 2nd class label, either 0 or -1.
+        """
+        self.add_regularization = add_regularization
+        self.regularization_factor = regularization_factor
+        self.class_zero_or_minus_one = class_zero_or_minus_one
+
+    cdef double cy_loss_with_extra_params(self, double y, double p, double * y_extra_data_params_ptr,
+                                            int n_y_extra_data_params, double * y_extra_data_values_ptr,
+                                            int n_y_extra_data_values, size_t itemsize) noexcept nogil:
+        cdef double y_vals[3]
+        cdef double y_vals_normalized_for_regularization[3]
+        cdef double result = 0
+
+        if n_y_extra_data_params != 0 or n_y_extra_data_values != 3:
+            return INFINITY
+
+        if itemsize == sizeof(double):
+            y_vals[0] = y_extra_data_values_ptr[0]
+            y_vals[1] = y_extra_data_values_ptr[1]
+            y_vals[2] = y_extra_data_values_ptr[2]
+        elif itemsize == sizeof(float):
+            y_vals[0] = (<float *> y_extra_data_values_ptr)[0]
+            y_vals[1] = (<float *> y_extra_data_values_ptr)[1]
+            y_vals[2] = (<float *> y_extra_data_values_ptr)[2]
+        elif itemsize == sizeof(float):
+            y_vals_normalized_for_regularization[i] = ((y_vals[i] - self.class_zero_or_minus_one) /
+                                                       (1 - self.class_zero_or_minus_one))
+
+        result = self._loss(y_vals[0], p) * self._loss(y_vals[1], p) * self._loss(y_vals[2], p)
+        if self.add_regularization == 1:
+            result += self._regularization_term(p, y_vals, y_vals_normalized_for_regularization)
+        return result
+
+    cdef double cy_gradient_with_extra_params(self, double y, double p, double * y_extra_data_params_ptr,
+                                              int n_y_extra_data_params, double * y_extra_data_values_ptr,
+                                              int n_y_extra_data_values, size_t itemsize) noexcept nogil:
+        cdef double y_vals[3]
+        cdef double y_vals_normalized_for_regularization[3]
+        cdef double result = 0
+
+        if n_y_extra_data_params != 0 or n_y_extra_data_values != 3:
+            return INFINITY
+
+        if itemsize == sizeof(double):
+            y_vals[0] = y_extra_data_values_ptr[0]
+            y_vals[1] = y_extra_data_values_ptr[1]
+            y_vals[2] = y_extra_data_values_ptr[2]
+        elif itemsize == sizeof(float):
+            y_vals[0] = (<float *> y_extra_data_values_ptr)[0]
+            y_vals[1] = (<float *> y_extra_data_values_ptr)[1]
+            y_vals[2] = (<float *> y_extra_data_values_ptr)[2]
+        else:
+            return INFINITY
+
+        # Normalize y_vals for regularization term
+        for i in range(3):
+            y_vals_normalized_for_regularization[i] = ((y_vals[i] - self.class_zero_or_minus_one) /
+                                                       (1 - self.class_zero_or_minus_one))
+
+        fprintf(stdout, "y_vals_normalized: %f, %f, %f, class_zero_or_minus_one: %d\n",
+                y_vals_normalized_for_regularization[0], y_vals_normalized_for_regularization[1],
+                y_vals_normalized_for_regularization[2], self.class_zero_or_minus_one)
+
+        result = (self._gradient(y_vals[0], p) * self._loss(y_vals[1], p) * self._loss(y_vals[2], p) +
+                  self._loss(y_vals[0], p) * self._gradient(y_vals[1], p) * self._loss(y_vals[2], p) +
+                  self._loss(y_vals[0], p) * self._loss(y_vals[1], p) * self._gradient(y_vals[2], p))
+        if self.add_regularization == 1:
+            result += self._grad_regularization_term(p, y_vals, y_vals_normalized_for_regularization)
+        return result
+
+    cdef double _regularization_term(self, double p, double * y_vals, double * y_vals_regularized) noexcept nogil:
+        """Calculate the regularization term for the loss function."""
+        return self.regularization_factor * (
+                y_vals_regularized[0] * self._loss(y_vals[0], p) +
+                y_vals_regularized[1] * self._loss(y_vals[1], p) +
+                y_vals_regularized[2] * self._loss(y_vals[2], p)
+        )
+
+    cdef double _grad_regularization_term(self, double p, double * y_vals, double * y_vals_regularized) noexcept nogil:
+        """Calculate the gradient of the regularization term for the loss function."""
+        return self.regularization_factor * (
+                y_vals_regularized[0] * self._gradient(y_vals[0], p) +
+                y_vals_regularized[1] * self._gradient(y_vals[1], p) +
+                y_vals_regularized[2] * self._gradient(y_vals[2], p)
+        )
+
+    cdef double _loss(self, double y, double p) noexcept nogil:
+        """Stub method to be implemented in subclasses."""
+        return 0
+
+    cdef double _gradient(self, double y, double p) noexcept nogil:
+        """Stub method to be implemented in subclasses."""
+        return 0
+
+    def py_loss(self, double p, const double[::1] y_vals):
+        """Python version of `loss` for testing only."""
+        y_vals_ptr = <double *> &y_vals[0]
+        return self.cy_loss_with_extra_params(y_vals[1], p, NULL, 0, y_vals_ptr, len(y_vals), y_vals.itemsize)
+
+    def py_dloss(self, double p, const double[::1] y_vals):
+        """Python version of `dloss` for testing only."""
+        y_vals_ptr = <double *> &y_vals[0]
+        return self.cy_gradient_with_extra_params(y_vals[1], p, NULL, 0, y_vals_ptr, len(y_vals), y_vals.itemsize)
+
+    def py_get_members(self):
+        """Get the members of the class for testing purposes."""
+        return {
+            'add_regularization': self.add_regularization,
+            'regularization_factor': self.regularization_factor,
+            'class_zero_or_minus_one': self.class_zero_or_minus_one
+        }
+
+
 cdef class ModifiedHuber(Classification):
     """Modified Huber loss for binary classification with y in {-1, 1}
 
@@ -234,9 +395,6 @@ cdef class ModifiedHuber(Classification):
             return (1.0 - z) * (1.0 - z)
         else:
             return -4.0 * z
-
-    cdef double cy_gradient(self, double y, double p) noexcept nogil:
-        cdef double z = p * y
         if z >= 1.0:
             return 0.0
         elif z >= -1.0:
@@ -379,6 +537,30 @@ cdef class ModifiedHuberUnbiasedProxyVaryingRhos(ClassificiationUnbiasedProxyVar
         return ModifiedHuberUnbiasedProxyVaryingRhos, (self.weight_1, self.weight_minus_1,)
 
 
+cdef class ModifiedHuberMultiplicativeTriplet(ClassificationMultiplicativeTriplet):
+    """Multiplicative loss over triplets, with modified Huber as the base loss function."""
+    cdef double _loss(self, double y, double p) noexcept nogil:
+        cdef double z = p * y
+        if z >= 1.0:
+            return 0.0
+        elif z >= -1.0:
+            return (1.0 - z) * (1.0 - z)
+        else:
+            return -4.0 * z
+
+    cdef double _gradient(self, double y, double p) noexcept nogil:
+        cdef double z = p * y
+        if z >= 1.0:
+            return 0.0
+        elif z >= -1.0:
+            return 2.0 * (1.0 - z) * -y
+        else:
+            return -4.0 * y
+
+    def __reduce__(self):
+        return ModifiedHuberMultiplicativeTriplet, (self.add_regularization, self.regularization_factor, self.class_zero_or_minus_one)
+
+
 cdef class Hinge(Classification):
     """Hinge loss for binary classification tasks with y in {-1,1}
 
@@ -491,8 +673,13 @@ cdef class HingeUnbiasedProxy(Classification):
     #     if isinstance(y_params, list) and len(y_params) > 0 and isinstance(y_params[0], dict):
     #
 
-cdef __reduce__(self):
-    return HingeUnbiasedProxy, (self.rho_1, self.rho_minus_1, self.threshold, self.weight_1, self.weight_minus_1,)
+    cdef __reduce__(self):
+        return HingeUnbiasedProxy, (self.rho_1, self.rho_minus_1, self.threshold, self.weight_1, self.weight_minus_1,)
+
+    cdef __repr__(self):
+        return f"HingeUnbiasedProxy(rho_1={self.rho_1}, rho_minus_1={self.rho_minus_1}, " \
+               f"threshold={self.threshold}, " \
+               f"weight_1={self.weight_1}, weight_minus_1={self.weight_minus_1})"
 
 
 cdef class HingeUnbiasedProxyVaryingRhos(ClassificiationUnbiasedProxyVaryingRhos):
@@ -534,6 +721,30 @@ cdef class HingeUnbiasedProxyVaryingRhos(ClassificiationUnbiasedProxyVaryingRhos
     cdef __reduce__(self):
         return HingeUnbiasedProxyVaryingRhos, (self.threshold, self.weight_1, self.weight_minus_1,)
 
+
+cdef class HingeMultiplicativeTriplet(ClassificationMultiplicativeTriplet):
+    """Multiplicative loss over triplets, with hinge as the base loss function."""
+    cdef double threshold
+
+    def __init(self, double threshold=1.0, *args, **kwargs):
+        self.threshold = threshold
+        super().__init__(*args, **kwargs)
+
+    cdef double _loss(self, double y, double p) noexcept nogil:
+        cdef double z = p * y
+        if z <= self.threshold:
+            return self.threshold - z
+        return 0.0
+
+    cdef double _gradient(self, double y, double p) noexcept nogil:
+        cdef double z = p * y
+        if z <= self.threshold:
+            return -y
+        return 0.0
+
+    def __reduce__(self):
+        return HingeMultiplicativeTriplet, (self.threshold, self.add_regularization, self.regularization_factor,
+                                            self.class_zero_or_minus_one)
 
 
 cdef class SquaredHinge(Classification):
@@ -1048,3 +1259,4 @@ cdef void l1penalty{{name_suffix}}(
         q_data_ptr[idx] += wscale * (w_data_ptr[idx] - z)
 
 {{endfor}}
+

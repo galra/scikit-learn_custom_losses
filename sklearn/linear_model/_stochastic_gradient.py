@@ -40,6 +40,8 @@ from ._sgd_fast import (
     HingeUnbiasedProxy,
     HingeUnbiasedProxyVaryingRhos,
     ModifiedHuberUnbiasedProxyVaryingRhos,
+    HingeMultiplicativeTriplet,
+    ModifiedHuberMultiplicativeTriplet,
     _plain_sgd32,
     _plain_sgd64,
 )
@@ -565,6 +567,8 @@ class BaseSGDClassifier(LinearClassifierMixin, BaseSGD, metaclass=ABCMeta):
         "modified_huber_unbiased_proxy": (ModifiedHuberUnbiasedProxy,),
         "hinge_unbiased_proxy_varying_rhos": (HingeUnbiasedProxyVaryingRhos, 1.0),
         "modified_huber_unbiased_proxy_varying_rhos": (ModifiedHuberUnbiasedProxyVaryingRhos,),
+        "hinge_multiplicative_triplet": (HingeMultiplicativeTriplet, 1.0),
+        "modified_huber_multiplicative_triplet": (ModifiedHuberMultiplicativeTriplet,),
     }
 
     _parameter_constraints: dict = {
