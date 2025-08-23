@@ -106,14 +106,6 @@ cdef class Regression(CyLossFunction):
         Returns
         -------
         double
-        p : double
-            The prediction, `p = w^T x + intercept`.
-        y : double
-            The true value (aka target).
-
-        Returns
-        -------
-        double
             The loss evaluated at `p` and `y`.
         """
         return self.cy_loss(y, p)
@@ -290,7 +282,10 @@ cdef class ClassificationMultiplicativeTriplet(Classification):
             y_vals[0] = (<float *> y_extra_data_values_ptr)[0]
             y_vals[1] = (<float *> y_extra_data_values_ptr)[1]
             y_vals[2] = (<float *> y_extra_data_values_ptr)[2]
-        elif itemsize == sizeof(float):
+        else:
+            return INFINITY
+
+        for i in range(3):
             y_vals_normalized_for_regularization[i] = ((y_vals[i] - self.class_zero_or_minus_one) /
                                                        (1 - self.class_zero_or_minus_one))
 
@@ -395,6 +390,9 @@ cdef class ModifiedHuber(Classification):
             return (1.0 - z) * (1.0 - z)
         else:
             return -4.0 * z
+
+    cdef double cy_gradient(self, double y, double p) noexcept nogil:
+        cdef double z = p * y
         if z >= 1.0:
             return 0.0
         elif z >= -1.0:
@@ -404,6 +402,9 @@ cdef class ModifiedHuber(Classification):
 
     def __reduce__(self):
         return ModifiedHuber, ()
+
+    def __repr__(self):
+        return "ModifiedHuber()"
 
 
 cdef class ModifiedHuberUnbiasedProxy(Classification):
@@ -480,6 +481,9 @@ cdef class ModifiedHuberUnbiasedProxy(Classification):
     def __reduce__(self):
         return ModifiedHuberUnbiasedProxy, (self.rho_1, self.rho_minus_1, self.weight_1, self.weight_minus_1,)
 
+    def __repr__(self):
+        return f"ModifiedHuberUnbiasedProxy(rho_1={self.rho_1}, rho_minus_1={self.rho_minus_1}, weight_1={self.weight_1}, weight_minus_1={self.weight_minus_1})"
+
 
 cdef class ModifiedHuberUnbiasedProxyVaryingRhos(ClassificiationUnbiasedProxyVaryingRhos):
     """Unbiased proxy loss function with rhos defined per sample (for example, when running over triplets),
@@ -536,6 +540,9 @@ cdef class ModifiedHuberUnbiasedProxyVaryingRhos(ClassificiationUnbiasedProxyVar
     def __reduce__(self):
         return ModifiedHuberUnbiasedProxyVaryingRhos, (self.weight_1, self.weight_minus_1,)
 
+    def __repr__(self):
+        return f"ModifiedHuberUnbiasedProxyVaryingRhos(weight_1={self.weight_1}, weight_minus_1={self.weight_minus_1})"
+
 
 cdef class ModifiedHuberMultiplicativeTriplet(ClassificationMultiplicativeTriplet):
     """Multiplicative loss over triplets, with modified Huber as the base loss function."""
@@ -559,6 +566,9 @@ cdef class ModifiedHuberMultiplicativeTriplet(ClassificationMultiplicativeTriple
 
     def __reduce__(self):
         return ModifiedHuberMultiplicativeTriplet, (self.add_regularization, self.regularization_factor, self.class_zero_or_minus_one)
+
+    def __repr__(self):
+        return f"ModifiedHuberMultiplicativeTriplet(add_regularization={self.add_regularization}, regularization_factor={self.regularization_factor}, class_zero_or_minus_one={self.class_zero_or_minus_one})"
 
 
 cdef class Hinge(Classification):
@@ -591,6 +601,9 @@ cdef class Hinge(Classification):
 
     def __reduce__(self):
         return Hinge, (self.threshold,)
+
+    def __repr__(self):
+        return f"Hinge(threshold={self.threshold})"
 
 
 cdef class HingeUnbiasedProxy(Classification):
@@ -673,10 +686,10 @@ cdef class HingeUnbiasedProxy(Classification):
     #     if isinstance(y_params, list) and len(y_params) > 0 and isinstance(y_params[0], dict):
     #
 
-    cdef __reduce__(self):
+    def __reduce__(self):
         return HingeUnbiasedProxy, (self.rho_1, self.rho_minus_1, self.threshold, self.weight_1, self.weight_minus_1,)
 
-    cdef __repr__(self):
+    def __repr__(self):
         return f"HingeUnbiasedProxy(rho_1={self.rho_1}, rho_minus_1={self.rho_minus_1}, " \
                f"threshold={self.threshold}, " \
                f"weight_1={self.weight_1}, weight_minus_1={self.weight_minus_1})"
@@ -718,15 +731,18 @@ cdef class HingeUnbiasedProxyVaryingRhos(ClassificiationUnbiasedProxyVaryingRhos
             return -y
         return 0.0
 
-    cdef __reduce__(self):
+    def __reduce__(self):
         return HingeUnbiasedProxyVaryingRhos, (self.threshold, self.weight_1, self.weight_minus_1,)
+
+    def __repr__(self):
+        return f"HingeUnbiasedProxyVaryingRhos(threshold={self.threshold}, weight_1={self.weight_1}, weight_minus_1={self.weight_minus_1})"
 
 
 cdef class HingeMultiplicativeTriplet(ClassificationMultiplicativeTriplet):
     """Multiplicative loss over triplets, with hinge as the base loss function."""
     cdef double threshold
 
-    def __init(self, double threshold=1.0, *args, **kwargs):
+    def __init__(self, double threshold=1.0, *args, **kwargs):
         self.threshold = threshold
         super().__init__(*args, **kwargs)
 
@@ -745,6 +761,10 @@ cdef class HingeMultiplicativeTriplet(ClassificationMultiplicativeTriplet):
     def __reduce__(self):
         return HingeMultiplicativeTriplet, (self.threshold, self.add_regularization, self.regularization_factor,
                                             self.class_zero_or_minus_one)
+
+    def __repr__(self):
+        return f"HingeMultiplicativeTriplet(threshold={self.threshold}, add_regularization={self.add_regularization}, " \
+               f"regularization_factor={self.regularization_factor}, class_zero_or_minus_one={self.class_zero_or_minus_one})"
 
 
 cdef class SquaredHinge(Classification):
@@ -778,6 +798,25 @@ cdef class SquaredHinge(Classification):
     def __reduce__(self):
         return SquaredHinge, (self.threshold,)
 
+    def __repr__(self):
+        return f"SquaredHinge(threshold={self.threshold})"
+
+
+cdef class EuclideanMultiplicativeTriplet(ClassificationMultiplicativeTriplet):
+    """Multiplicative loss over triplets, with Euclidean (L2) as the base loss function."""
+    cdef double _loss(self, double y, double p) noexcept nogil:
+        cdef double diff = y - p
+        return diff * diff
+
+    cdef double _gradient(self, double y, double p) noexcept nogil:
+        return -2 * (y - p)
+
+    def __reduce__(self):
+        return EuclideanMultiplicativeTriplet, (self.add_regularization, self.regularization_factor, self.class_zero_or_minus_one)
+
+    def __repr__(self):
+        return f"EuclideanMultiplicativeTriplet(add_regularization={self.add_regularization}, regularization_factor={self.regularization_factor}, class_zero_or_minus_one={self.class_zero_or_minus_one})"
+
 
 cdef class EpsilonInsensitive(Regression):
     """Epsilon-Insensitive loss (used by SVR).
@@ -804,6 +843,9 @@ cdef class EpsilonInsensitive(Regression):
 
     def __reduce__(self):
         return EpsilonInsensitive, (self.epsilon,)
+
+    def __repr__(self):
+        return f"EpsilonInsensitive(epsilon={self.epsilon})"
 
 
 cdef class SquaredEpsilonInsensitive(Regression):
@@ -833,6 +875,9 @@ cdef class SquaredEpsilonInsensitive(Regression):
 
     def __reduce__(self):
         return SquaredEpsilonInsensitive, (self.epsilon,)
+
+    def __repr__(self):
+        return f"SquaredEpsilonInsensitive(epsilon={self.epsilon})"
 
 {{for name_suffix, c_type, np_type in dtypes}}
 
@@ -1259,4 +1304,3 @@ cdef void l1penalty{{name_suffix}}(
         q_data_ptr[idx] += wscale * (w_data_ptr[idx] - z)
 
 {{endfor}}
-
