@@ -27,7 +27,7 @@ from time import time
 
 from cython cimport floating
 from libc.math cimport exp, fabs, isfinite, log, pow, INFINITY
-from libc.stdio cimport fprintf, stdout
+# from libc.stdio cimport fprintf, stdout
 
 
 from .._loss._loss cimport CyLossFunction
@@ -319,10 +319,6 @@ cdef class ClassificationMultiplicativeTriplet(Classification):
         for i in range(3):
             y_vals_normalized_for_regularization[i] = ((y_vals[i] - self.class_zero_or_minus_one) /
                                                        (1 - self.class_zero_or_minus_one))
-
-        fprintf(stdout, "y_vals_normalized: %f, %f, %f, class_zero_or_minus_one: %d\n",
-                y_vals_normalized_for_regularization[0], y_vals_normalized_for_regularization[1],
-                y_vals_normalized_for_regularization[2], self.class_zero_or_minus_one)
 
         result = (self._gradient(y_vals[0], p) * self._loss(y_vals[1], p) * self._loss(y_vals[2], p) +
                   self._loss(y_vals[0], p) * self._gradient(y_vals[1], p) * self._loss(y_vals[2], p) +
