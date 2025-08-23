@@ -47,7 +47,9 @@ from ._sgd_fast import (
     _plain_sgd64,
 )
 
-LOSSES_WITH_Y_PARAMS = ['hinge_unbiased_proxy_varying_rhos', 'modified_huber_unbiased_proxy_varying_rhos']
+LOSSES_WITH_Y_PARAMS = ['hinge_unbiased_proxy_varying_rhos', 'modified_huber_unbiased_proxy_varying_rhos',
+                        'hinge_multiplicative_triplet', 'modified_huber_multiplicative_triplet',
+                        'euclidean_multiplicative_triplet']
 
 LEARNING_RATE_TYPES = {
     "constant": 1,
